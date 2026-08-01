@@ -1,0 +1,47 @@
+{
+ "calibration_version": 1,
+ "corridors": {
+  "EAST": {
+   "arrival_slack_stdev_min": 77.9,
+   "circuity_fit": 1.3,
+   "loads_observed": 5,
+   "window_buffer_min": 39
+  },
+  "NE": {
+   "arrival_slack_stdev_min": 37.8,
+   "circuity_fit": 1.3,
+   "loads_observed": 6,
+   "window_buffer_min": 19
+  },
+  "NORTH": {
+   "arrival_slack_stdev_min": 56.6,
+   "circuity_fit": 1.3,
+   "loads_observed": 8,
+   "window_buffer_min": 28
+  },
+  "SOUTH": {
+   "arrival_slack_stdev_min": 98.5,
+   "circuity_fit": 1.3,
+   "loads_observed": 7,
+   "window_buffer_min": 49
+  },
+  "SW": {
+   "arrival_slack_stdev_min": 55.1,
+   "circuity_fit": 1.3,
+   "loads_observed": 6,
+   "window_buffer_min": 28
+  },
+  "WEST": {
+   "arrival_slack_stdev_min": 94.5,
+   "circuity_fit": 1.3,
+   "loads_observed": 5,
+   "window_buffer_min": 47
+  }
+ },
+ "generated_as_of": 540,
+ "generated_from_plan": "afa51301b20a",
+ "note": "mechanism demonstration on synthetic data; the circuity fit recovering the generator's known 1.3 factor is a parameter-recovery check, not a real-world gain",
+ "solver": {
+  "assign_time_budget_s": 10
+ }
+}

@@ -1,0 +1,4 @@
+ortools>=9.8
+duckdb>=0.10
+pyyaml>=6.0
+pytest>=8.0
