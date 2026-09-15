@@ -3,7 +3,7 @@ within [earliest, latest] from routing; departing later only absorbs waiting,
 so window feasibility is preserved and the route's span shrinks toward its
 waitless minimum (pure drive + service). Each (load, departure) pair is an
 optional interval; NoOverlap per departure; simplified FMCSA HANDLING: driving
-minutes <= 11h inside the departure's 14h shift. Deterministic: 1 worker,
+minutes <= 11h inside the departure's 14h acceptance window. Deterministic: 1 worker,
 fixed seed, 10s cap."""
 from ortools.sat.python import cp_model
 from .models import Exception_
