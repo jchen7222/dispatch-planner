@@ -3,28 +3,28 @@ injected delay, exceptions. (Porting these views to dbt models is
 extension exercise #2 — see README.)"""
 import duckdb
 
-def naive_truck_count(orders, fleet):
+def naive_shipment_count(orders, services):
     """Baseline: no consolidation — each order alone on the smallest fitting model."""
     n = 0
     for o in orders:
-        if any(o.weight_kg <= m.max_weight_kg and o.cube_m3 <= m.max_cube_m3 for m in fleet):
+        if any(o.weight_kg <= m.max_weight_kg and o.cube_m3 <= m.max_cube_m3 for m in services):
             n += 1
         else:
             n += 2   # would need a split even alone
     return n
 
-def build(loads, orders, exceptions, fleet, delay_min=90, delay_every=5):
+def build(loads, orders, exceptions, services, delay_min=90, delay_every=5):
     con = duckdb.connect()
-    con.execute("""CREATE TABLE loads(load_id VARCHAR, model VARCHAR, zone VARCHAR,
+    con.execute("""CREATE TABLE loads(load_id VARCHAR, service VARCHAR, zone VARCHAR,
         weight DOUBLE, cube DOUBLE, weight_fill DOUBLE, cube_fill DOUBLE,
         binding VARCHAR, stops INT, distance_km DOUBLE, drive_min INT,
-        depart INT, back INT, driver VARCHAR)""")
+        depart INT, back INT, departure VARCHAR)""")
     for l in loads:
         con.execute("INSERT INTO loads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [l.load_id, l.model.name, l.zone, l.weight, l.cube,
              round(l.weight_fill, 3), round(l.cube_fill, 3), l.binding_dim,
              len(l.stop_sequence), l.distance_km, int(l.drive_min),
-             l.depart_min, l.arrive_back_min, l.driver_id])
+             l.depart_min, l.arrive_back_min, l.departure_id])
     con.execute("CREATE TABLE stops(load_id VARCHAR, order_id VARCHAR, arrival INT, wend INT, value_usd DOUBLE)")
     omap = {o.order_id: o for o in orders}
     i = 0
@@ -39,11 +39,11 @@ def build(loads, orders, exceptions, fleet, delay_min=90, delay_every=5):
     for e in exceptions:
         con.execute("INSERT INTO exceptions VALUES (?,?)", [e.order_id, e.reason])
 
-    util = con.execute("""SELECT model, count(*) AS trucks,
+    util = con.execute("""SELECT service, count(*) AS consignments,
         round(avg(CASE WHEN binding='weight' THEN weight_fill ELSE cube_fill END),3) AS avg_binding_fill,
         sum(CASE WHEN binding='weight' THEN 1 ELSE 0 END) AS weigh_out,
         sum(CASE WHEN binding='cube' THEN 1 ELSE 0 END)  AS cube_out
-        FROM loads GROUP BY model ORDER BY model""").fetchall()
+        FROM loads GROUP BY service ORDER BY service""").fetchall()
     otif = con.execute(
         "SELECT round(100.0*sum(CASE WHEN arrival<=wend THEN 1 ELSE 0 END)/count(*),1) FROM stops"
     ).fetchone()[0]
@@ -62,9 +62,9 @@ def build(loads, orders, exceptions, fleet, delay_min=90, delay_every=5):
     exc = con.execute(
         "SELECT reason, count(*) FROM exceptions GROUP BY reason ORDER BY 2 DESC").fetchall()
     totals = con.execute(
-        "SELECT count(*), round(sum(distance_km),1), count(DISTINCT CASE WHEN driver <> '' THEN driver END) FROM loads").fetchone()
+        "SELECT count(*), round(sum(distance_km),1), count(DISTINCT CASE WHEN departure <> '' THEN departure END) FROM loads").fetchone()
     return {"util": util, "otif_pct_with_injected_delays": otif,
             "otif_by_value_pct": otif_by_value, "blast_radius_top5": blast,
-            "exceptions": exc, "trucks_used": totals[0],
+            "exceptions": exc, "consignments_used": totals[0],
             "total_km": totals[1], "drivers_used": totals[2],
-            "naive_trucks": naive_truck_count(orders, fleet)}
+            "naive_shipments": naive_shipment_count(orders, services)}

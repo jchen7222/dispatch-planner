@@ -1,15 +1,15 @@
-"""Driver assignment: CP-SAT (exact). Departure time is a decision variable
+"""Departure assignment: CP-SAT (exact). Departure time is a decision variable
 within [earliest, latest] from routing; departing later only absorbs waiting,
 so window feasibility is preserved and the route's span shrinks toward its
-waitless minimum (pure drive + service). Each (load, driver) pair is an
-optional interval; NoOverlap per driver; simplified FMCSA HOS: driving
-minutes <= 11h inside the driver's 14h shift. Deterministic: 1 worker,
+waitless minimum (pure drive + service). Each (load, departure) pair is an
+optional interval; NoOverlap per departure; simplified FMCSA HANDLING: driving
+minutes <= 11h inside the departure's 14h shift. Deterministic: 1 worker,
 fixed seed, 10s cap."""
 from ortools.sat.python import cp_model
 from .models import Exception_
 
 
-def assign(loads, drivers, orders_by_id=None):
+def assign(loads, departures, orders_by_id=None):
     m = cp_model.CpModel()
     span = {l.load_id: int(l.arrive_back_min - l.depart_min) for l in loads}
     span_min = {l.load_id: min(int(l.span_min) or span[l.load_id], span[l.load_id])
@@ -30,15 +30,15 @@ def assign(loads, drivers, orders_by_id=None):
     x, itv = {}, {}
     for l in loads:
         lid = l.load_id
-        for d in drivers:
-            lo = max(earliest[lid], d.shift_start)
-            if lo <= latest[lid] and lo + span_min[lid] <= d.shift_end:
-                key = (lid, d.driver_id)
-                x[key] = m.NewBoolVar(f"x_{lid}_{d.driver_id}")
+        for d in departures:
+            lo = max(earliest[lid], d.accept_from)
+            if lo <= latest[lid] and lo + span_min[lid] <= d.cutoff:
+                key = (lid, d.departure_id)
+                x[key] = m.NewBoolVar(f"x_{lid}_{d.departure_id}")
                 itv[key] = m.NewOptionalIntervalVar(
-                    start[lid], size[lid], end[lid], x[key], f"i_{lid}_{d.driver_id}")
-                m.Add(start[lid] >= d.shift_start).OnlyEnforceIf(x[key])
-                m.Add(end[lid] <= d.shift_end).OnlyEnforceIf(x[key])
+                    start[lid], size[lid], end[lid], x[key], f"i_{lid}_{d.departure_id}")
+                m.Add(start[lid] >= d.accept_from).OnlyEnforceIf(x[key])
+                m.Add(end[lid] <= d.cutoff).OnlyEnforceIf(x[key])
 
     assigned = {}
     for l in loads:
@@ -49,12 +49,12 @@ def assign(loads, drivers, orders_by_id=None):
             m.AddMaxEquality(a, vs)
             assigned[l.load_id] = a
 
-    for d in drivers:
-        ds = [itv[k] for k in itv if k[1] == d.driver_id]
+    for d in departures:
+        ds = [itv[k] for k in itv if k[1] == d.departure_id]
         if ds:
             m.AddNoOverlap(ds)
-        m.Add(sum(int(l.drive_min) * x[(l.load_id, d.driver_id)]
-                  for l in loads if (l.load_id, d.driver_id) in x) <= d.max_drive_min)
+        m.Add(sum(int(l.drive_min) * x[(l.load_id, d.departure_id)]
+                  for l in loads if (l.load_id, d.departure_id) in x) <= d.max_handling_min)
 
     m.Maximize(sum(1000 * a for a in assigned.values()))
     solver = cp_model.CpSolver()
@@ -68,11 +68,11 @@ def assign(loads, drivers, orders_by_id=None):
         _wend_all = {oid: o.window_end for oid, o in orders_by_id.items()}
     exceptions = []
     for l in loads:
-        l.driver_id = ""
-        for d in drivers:
-            v = x.get((l.load_id, d.driver_id))
+        l.departure_id = ""
+        for d in departures:
+            v = x.get((l.load_id, d.departure_id))
             if v is not None and solver.Value(v):
-                l.driver_id = d.driver_id
+                l.departure_id = d.departure_id
                 new_depart = solver.Value(start[l.load_id])
                 delta = new_depart - l.depart_min
                 if delta:
@@ -82,6 +82,6 @@ def assign(loads, drivers, orders_by_id=None):
                     l.stop_arrivals = {k: min(v2 + delta, _wend_all.get(k, 10**6))
                                        for k, v2 in l.stop_arrivals.items()}
                 l.arrive_back_min = solver.Value(end[l.load_id])
-        if not l.driver_id:
-            exceptions.append(Exception_(l.load_id, "no_legal_driver"))
+        if not l.departure_id:
+            exceptions.append(Exception_(l.load_id, "no_departure_before_cutoff"))
     return exceptions

@@ -9,7 +9,7 @@ import argparse
 import json
 import os
 
-from .generator import make_orders, make_drivers, FLEET
+from .generator import make_orders, make_departures, SERVICES
 from .packing import pack
 from .routing import route_load
 from .assignment import assign
@@ -22,11 +22,11 @@ CASSETTE = os.path.join(os.path.dirname(__file__), "..", "fixtures",
 
 def plan_with(provider, seed, n_orders):
     orders = make_orders(n_orders, seed)
-    drivers = make_drivers(seed=seed)
-    loads, exceptions = pack(orders, FLEET)
+    departures = make_departures(seed=seed)
+    loads, exceptions = pack(orders, SERVICES)
     omap = {o.order_id: o for o in orders}
     routed = [l for l in loads if route_load(l, omap, provider=provider) is None]
-    assign(routed, drivers, omap)
+    assign(routed, departures, omap)
     return routed
 
 
@@ -56,7 +56,7 @@ def main():
         return sum(getattr(l, attr) for l in loads)
 
     print(f"{'':22}{'haversine':>12}{'osrm (real roads)':>20}")
-    print(f"{'trucks used':22}{len(base):>12}{len(road):>20}")
+    print(f"{'consignments used':22}{len(base):>12}{len(road):>20}")
     print(f"{'total distance km':22}{tot(base,'distance_km'):>12.1f}{tot(road,'distance_km'):>20.1f}")
     print(f"{'total drive min':22}{tot(base,'drive_min'):>12}{tot(road,'drive_min'):>20}")
     print(f"{'plan fingerprint':22}{fingerprint(base):>12}{fingerprint(road):>20}")

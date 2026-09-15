@@ -3,7 +3,7 @@ import pytest
 from dispatch.run import plan
 from dispatch.delay import inject_delay, live_notifications
 from dispatch.models import Order, Load, Allocation
-from dispatch.generator import FLEET
+from dispatch.generator import SERVICES
 from dispatch.ledger import Ledger
 
 SEED = 42
@@ -11,9 +11,9 @@ SEED = 42
 
 @pytest.fixture()
 def delayed():
-    orders, drivers, loads, exceptions, led = plan(seed=SEED, n_orders=80)
+    orders, departures, loads, exceptions, led = plan(seed=SEED, n_orders=80)
     omap = {o.order_id: o for o in orders}
-    target = next(l for l in loads if l.driver_id and len(l.stop_sequence) >= 2)
+    target = next(l for l in loads if l.departure_id and len(l.stop_sequence) >= 2)
     notes = inject_delay(target, 300, omap, led, event_time=600, record_time=605)
     return omap, target, led, notes
 
@@ -61,7 +61,7 @@ def test_second_delay_supersedes_not_duplicates(delayed):
     per_key = {}
     for n in live:
         per_key[n["entity_id"]] = per_key.get(n["entity_id"], 0) + 1
-    assert all(v == 1 for v in per_key.values()), "exactly one live notification per party x truck"
+    assert all(v == 1 for v in per_key.values()), "exactly one live notification per party x consignment"
     # history preserved: superseded events still in the ledger
     all_notes = [e for e in led.events if e["type"] == "delay_notification_queued"]
     assert len(all_notes) > len(live), "superseded notifications remain in the audit trail"
@@ -70,10 +70,10 @@ def test_second_delay_supersedes_not_duplicates(delayed):
 def test_delay_inside_window_is_a_non_event():
     o = Order("OX", "NORTH", 43.5, -76.1, 100, 1.0, 300, 1200, False,
               supplier_id="S00", customer_id="C00", amount=10, value_usd=500.0)
-    ld = Load("LX", FLEET[0], "NORTH", [Allocation("OX", 100, 1.0)], 300, 1200)
+    ld = Load("LX", SERVICES[0], "NORTH", [Allocation("OX", 100, 1.0)], 300, 1200)
     ld.stop_sequence = ["OX"]
     ld.stop_arrivals = {"OX": 400}
-    ld.driver_id = "D00"
+    ld.departure_id = "D00"
     led = Ledger()
     notes = inject_delay(ld, 60, {"OX": o}, led, event_time=500, record_time=505)
     assert notes == [] and live_notifications(led) == []

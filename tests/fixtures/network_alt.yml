@@ -1,0 +1,38 @@
+# CI fixture: the onboard-a-carrier proof. One extra entry, zero code changes.
+# `MiniParcel` exists only here — no Python file mentions it — yet it packs,
+# and the rule that lets cosmetics ride it is also just config.
+depot: {lat: 43.05, lon: -76.15}
+zones:
+  NORTH: {lat: 43.55, lon: -76.10}
+  SOUTH: {lat: 42.60, lon: -76.20}
+
+services:
+  - {name: Economy,    max_weight_kg: 1500, max_cube_m3: 12.0, cost_per_km: 0.50, count: 4,
+     approved: [general]}
+  - {name: Standard,   max_weight_kg: 4500, max_cube_m3: 28.0, cost_per_km: 0.80, count: 4,
+     approved: [general, cosmetics]}
+  - {name: MiniParcel, max_weight_kg: 150,  max_cube_m3: 1.2,  cost_per_km: 0.05, count: 6,
+     approved: [general, cosmetics]}
+
+routing_rules:
+  version: alt-v1
+  effective_from: "2026-09-01"
+  rules:
+    - id: A1
+      when: {commodity_class: prohibited}
+      allow: []
+    - id: A2                                   # this network has no DG-approved service
+      when: {commodity_class: flammable_liquid}
+      allow: []
+    - id: A3
+      when: {commodity_class: lithium_battery}
+      allow: []
+    - id: A4
+      when: {commodity_class: cosmetics}
+      allow: [Standard, MiniParcel]
+    - id: A5
+      when: {commodity_class: general}
+      allow: [Economy, Standard, MiniParcel]
+
+handling: {max_handling_min: 660, max_window_min: 840}
+departures_cfg: {starts: [240, 360], length_min: 840, departures: 6}

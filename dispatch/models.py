@@ -2,12 +2,16 @@
 from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
-class TruckModel:
+class CarrierService:
+    """One shipping company's service level on a corridor. `approved_commodity_classes`
+    is a fact about the CARRIER — what it is certified to accept. The business rules in
+    config/network.yml may be stricter; eligibility is the intersection of the two."""
     name: str
     max_weight_kg: float
     max_cube_m3: float
     cost_per_km: float
-    count_available: int
+    slots_per_day: int
+    approved_commodity_classes: tuple = ("general",)
 
 @dataclass(frozen=True)
 class Order:
@@ -25,14 +29,20 @@ class Order:
     amount: int = 0          # units shipped
     value_usd: float = 0.0   # order value
     service_min: int = 15
+    # general | cosmetics | flammable_liquid | lithium_battery | prohibited
+    # NOT "sensitive" — see README. Perfume and nail polish are dangerous goods
+    # (flammable liquid) under IATA; lithium cells are DG under UN3480/3481.
+    commodity_class: str = "general"
 
 @dataclass(frozen=True)
-class Driver:
-    driver_id: str
-    shift_start: int
-    shift_end: int
-    max_drive_min: int = 660   # simplified FMCSA: 11h driving
-    max_duty_min: int = 840    # inside a 14h on-duty window
+class Departure:
+    """A carrier's scheduled uplift. Tender is accepted from `accept_from` until
+    `cutoff`; miss the cutoff and the consignment rolls to the next departure."""
+    departure_id: str
+    accept_from: int
+    cutoff: int
+    max_handling_min: int = 660   # total handling minutes this departure can absorb
+    max_window_min: int = 840     # length of the acceptance window
 
 @dataclass
 class Allocation:
@@ -44,7 +54,7 @@ class Allocation:
 @dataclass
 class Load:
     load_id: str
-    model: TruckModel
+    model: CarrierService
     zone: str
     allocations: list = field(default_factory=list)
     window_start: int = 0        # intersection of member windows
@@ -56,7 +66,7 @@ class Load:
     drive_min: int = 0
     distance_km: float = 0.0
     stop_arrivals: dict = field(default_factory=dict)   # order_id -> arrival minute
-    driver_id: str = ""
+    departure_id: str = ""
 
     @property
     def weight(self):
