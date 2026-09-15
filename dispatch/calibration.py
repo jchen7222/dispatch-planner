@@ -9,9 +9,9 @@ Three feedbacks, in order of trust:
      fits, volatility-sized window buffers (wider buffers for noisier
      corridors — the same instinct as wider alert thresholds for noisier
      suppliers), and a solver time budget from observed solve behavior.
-  3. Objective shaping: the blast-radius mart (parties x value per truck)
-     exposes which trucks are expensive to delay; packing prefers not to
-     concentrate many parties' high-value orders on one fragile truck.
+  3. Objective shaping: the blast-radius mart (parties x value per consignment)
+     exposes which consignments are expensive to delay; packing prefers not to
+     concentrate many parties' high-value orders on one fragile consignment.
 
 Ledger discipline applies to configuration too: every calibration write is a
 `config_updated` event, and every plan records the calibration version it

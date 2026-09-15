@@ -6,7 +6,7 @@ Solved twice per load with identical constraints:
   pass 2 (latest):   maximize departure (just-in-time) -> the latest feasible
           departure, whose span approaches the waitless minimum.
 The pair [earliest, latest] becomes the departure-time decision space for the
-CP-SAT driver-assignment stage.
+CP-SAT departure-assignment stage.
 
 Deterministic: PATH_CHEAPEST_ARC first solution, fixed parameters, no
 metaheuristic on the default path (a time-boxed GUIDED_LOCAL_SEARCH flag exists

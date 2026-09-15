@@ -1,14 +1,14 @@
 """Stage 5A — delay impact and party notification.
 
-A `truck_delayed` event triggers a compensating `plan_amended` (never an
-overwrite), then the impact walk: truck -> its stops -> the orders on them ->
+A `consignment_delayed` event triggers a compensating `plan_amended` (never an
+overwrite), then the impact walk: consignment -> its stops -> the orders on them ->
 each order's supplier and customer. Delay is measured against the PROMISE
-(the order's window_end), not the plan: a truck can run late and still
+(the order's window_end), not the plan: a consignment can run late and still
 deliver inside the window — that is a delay of zero and no notification.
 
 One `delay_notification_queued` event per affected party per delay, scoped
-to that party's own orders only. A second delay on the same truck emits a
-superseding notification (idempotency key: party x truck), so the ledger
+to that party's own orders only. A second delay on the same consignment emits a
+superseding notification (idempotency key: party x consignment), so the ledger
 holds the full who-was-told-what history while exactly one notification per
 party is live. No email is sent; the queue IS the deliverable."""
 import math
@@ -29,17 +29,17 @@ def _last_live(ledger, entity_id, types):
 def inject_delay(load, delay_min, orders_by_id, ledger, event_time, record_time):
     """Apply a delay to one planned load. Returns the list of live notification
     events created (possibly empty, when every arrival stays inside its window)."""
-    ledger.append("truck_delayed", load.load_id,
-                  {"delay_min": delay_min, "driver": load.driver_id},
+    ledger.append("consignment_delayed", load.load_id,
+                  {"delay_min": delay_min, "departure": load.departure_id},
                   event_time=event_time, record_time=record_time)
 
     new_arrivals = {oid: t + delay_min for oid, t in load.stop_arrivals.items()}
     prior_plan = _last_live(ledger, load.load_id, ("load_plan_created", "plan_amended"))
     ledger.append("plan_amended", load.load_id, {
-        "model": load.model.name, "driver": load.driver_id,
+        "model": load.model.name, "departure": load.departure_id,
         "orders": [a.order_id for a in load.allocations],
         "arrivals": new_arrivals,
-        "note": f"compensates truck_delayed +{delay_min}min",
+        "note": f"compensates consignment_delayed +{delay_min}min",
     }, event_time=event_time, record_time=record_time + 1,
         corrects=prior_plan["seq"] if prior_plan else None)
     load.stop_arrivals = new_arrivals
@@ -69,7 +69,7 @@ def inject_delay(load, delay_min, orders_by_id, ledger, event_time, record_time)
         prior = _last_live(ledger, key, ("delay_notification_queued",))
         name = (SUPPLIERS.get(party) or CUSTOMERS.get(party) or {}).get("name", party)
         payload = {
-            "party": party, "party_name": name, "truck": load.load_id,
+            "party": party, "party_name": name, "consignment": load.load_id,
             "orders": rows,
             "total_value_usd": round(sum(r["value_usd"] for r in rows), 2),
             "max_days_of_delay": max(r["days_of_delay"] for r in rows),
@@ -83,7 +83,7 @@ def inject_delay(load, delay_min, orders_by_id, ledger, event_time, record_time)
 
 def render(notification):
     p = notification["payload"]
-    lines = [f"NOTIFY {p['party']} ({p['party_name']}) — truck {p['truck']} delayed:"]
+    lines = [f"NOTIFY {p['party']} ({p['party_name']}) — consignment {p['consignment']} delayed:"]
     for r in p["orders"]:
         lines.append(f"  {r['order_id']} ({r['role']}): {r['amount']} units, "
                      f"${r['value_usd']:,.2f} — {r['days_of_delay']} day(s) late "

@@ -1,0 +1,77 @@
+# The carrier network and the routing rules are TEMPLATE-DEFINED configuration,
+# not code. Onboarding a carrier service = one entry under `services:`; changing
+# which goods may ride it = one entry under `routing_rules:`. Zero Python files
+# change, and CI proves it (tests/test_config.py instantiates the network from a
+# fixture template carrying an extra service).
+
+depot: {lat: 43.05, lon: -76.15}      # consolidation point for the collection leg
+
+zones:                       # collection corridors (center lat/lon)
+  NORTH: {lat: 43.55, lon: -76.10}
+  SOUTH: {lat: 42.60, lon: -76.20}
+  EAST:  {lat: 43.05, lon: -75.20}
+  WEST:  {lat: 43.00, lon: -77.10}
+  NE:    {lat: 43.45, lon: -75.40}
+  SW:    {lat: 42.70, lon: -76.90}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CARRIER CAPABILITY — what each shipping company's service is certified to
+# accept. A fact about the carrier, not a preference of ours.
+#   approved:      the commodity classes this service may lawfully carry
+#   count:         consignments it will accept per day
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  - {name: Economy,   max_weight_kg: 1500,  max_cube_m3: 12.0, cost_per_km: 0.50, count: 18,
+     approved: [general]}
+  - {name: Standard,  max_weight_kg: 4500,  max_cube_m3: 28.0, cost_per_km: 0.80, count: 26,
+     approved: [general, cosmetics]}
+  - {name: DGExpress, max_weight_kg: 15000, max_cube_m3: 75.0, cost_per_km: 1.40, count: 30,
+     approved: [general, cosmetics, flammable_liquid, lithium_battery]}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUSINESS RULES — which services we are willing to use for which goods. May be
+# STRICTER than the carrier's certification; eligibility is the intersection.
+# First match wins, so order is precedence. `version` is stamped on every
+# decision, which is what makes a past routing reproducible after an edit.
+# ─────────────────────────────────────────────────────────────────────────────
+routing_rules:
+  version: v1
+  effective_from: "2026-09-01"
+  rules:
+    - id: R1                       # prohibited stops here, before any lane is considered
+      when: {commodity_class: prohibited}
+      allow: []
+
+    - id: R2                       # lithium cells — DG-approved services only (UN3480/3481)
+      when: {commodity_class: lithium_battery}
+      allow: [DGExpress]
+
+    - id: R3                       # perfume, nail polish, aerosols — IATA flammable liquid
+      when: {commodity_class: flammable_liquid}
+      allow: [DGExpress]
+
+    - id: R4                       # small cosmetics ride the standard consolidated service
+      when: {commodity_class: cosmetics, weight_kg: {lt: 30}}
+      allow: [Standard, DGExpress]
+
+    - id: R5                       # bulk cosmetics are handled as a restricted commodity
+      when: {commodity_class: cosmetics, weight_kg: {gte: 30}}
+      allow: [DGExpress]
+
+    - id: R6                       # general goods — the weight band picks the service
+      when: {commodity_class: general, weight_kg: {lt: 1500}}
+      allow: [Economy, Standard, DGExpress]
+
+    - id: R7
+      when: {commodity_class: general, weight_kg: {gte: 1500}}
+      allow: [Standard, DGExpress]
+
+# Handling capacity per departure, and the acceptance window.
+handling:
+  max_handling_min: 660        # minutes of handling one departure can absorb
+  max_window_min: 840          # length of the acceptance window
+
+departures_cfg:
+  starts: [240, 300, 360, 420, 480]   # tender accepted from 04:00–08:00
+  length_min: 840                     # until cutoff, 14h later
+  departures: 20

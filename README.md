@@ -1,66 +1,56 @@
-# Load Consolidation & Dispatch Planner
+# Load Consolidation & Carrier Assignment
 
-Every morning a dispatcher faces the same puzzle: a pile of orders, a mixed fleet, promised delivery windows, and drivers who may only legally drive so many hours — and a day that will not go according to plan. This project is that dispatcher, automated. It decides which orders ride together so the fewest trucks leave the yard, in what sequence the stops happen so every window is kept, and which driver takes which route so no one runs out of legal hours. When a truck breaks down, runs late, or a customer cancels, nothing is erased and nothing crashes: the change is recorded, the plan recalculates, and the ledger can show you exactly what the plan said at any moment before or after. When a delay actually breaks a promise, the system traces exactly which orders, suppliers, and customers are hit and drafts each party's notification — their order numbers, their amounts, their value, their days of delay — so nobody finds out from an empty dock. A metrics layer keeps score — how full the trucks ran, how many trucks the optimizer saved, how often deliveries landed on time and in full — and automated checks guarantee the two things a shipper cares about most: no order is ever lost, and no affected party goes un-notified.
+Every morning a cross-border forwarder faces the same puzzle: a pile of orders bound overseas, a set of carrier services with different capabilities and prices, promised delivery dates, and goods that may not all ride the same service. Perfume is a flammable liquid under IATA; lithium cells are dangerous goods under UN3480/3481; a 40 kg carton of cosmetics and a 2 kg one do not go the same way. This project is that forwarder, automated. It decides **which goods may legally ride which carrier**, which orders consolidate so the fewest consignments are booked, in what sequence the collection stops happen so every window is kept, and which departure each consignment is tendered to before its cutoff. Every routing decision is emitted as an event carrying **the rule-set version and the rule id that produced it**, so a mis-route six weeks and four rule edits later is a two-line query, not an afternoon of reconstruction. When a pickup is missed, a booking is cancelled or a lane goes down, nothing is erased: the change is recorded, the plan recalculates, and the ledger shows exactly what the plan said at any moment. When a delay breaks a promise, the system traces which orders, suppliers and customers are hit and drafts each party's notification. A metrics layer keeps score, and automated checks guarantee the three things that matter: no order is lost, no affected party goes un-notified, and **no restricted commodity ever rides a service that is not approved to carry it**.
 
-> **All order, fleet, party, and driver data in this repository is synthetic**, produced by a seeded generator (`dispatch/generator.py`). The *methods* are the real ones the industry uses; the data is not real and is not presented as real.
+> **All order, carrier, party, and departure data in this repository is synthetic**, produced by a seeded generator (`dispatch/generator.py`). The *methods* are the real ones the industry uses; the data is not real and is not presented as real.
 
 ## Quickstart
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                    # 13 property tests
+python -m pytest -q                    # 36 property tests
 python -m dispatch.run --seed 42 --disrupt
 ```
 
 ## One run, real output
 
 ```
-plan fingerprint : afa51301b20a
+eligibility      : rule set v1 (2026-09-01) — cosmetics 12 · flammable_liquid 2 · general 61 · lithium_battery 5   refused by rule: 0
+plan fingerprint : a5e5c323b86a
 orders           : 80   planned: 79   excepted: 1
-trucks used      : 37  (naive one-order-one-truck baseline: 85)
-drivers used     : 20   total distance: 7168.4 km
-OTIF w/ delays   : 84.3%   by value: 85.2%
-blast radius     : widest truck L021 touches 8 parties, $137,679 at risk
-utilization      : model | trucks | avg fill (binding dim) | weigh-out | cube-out
-                   BoxTruck |    18  |    0.825              |     15   | 3
-                   Semi     |    14  |    0.818              |      8   | 6
-                   Sprinter |     5  |    0.615              |      5   | 0
+consignments used      : 37  (naive one-order-one-consignment baseline: 85)
+departures used     : 19   total distance: 7233.2 km
+OTIF w/ delays   : 84.3%   by value: 94.3%
+blast radius     : widest consignment L026 touches 6 parties, $191,859 at risk
+utilization      : service | consignments | avg fill (binding dim) | weigh-out | cube-out
+                   DGExpress |    20  |    0.619              |     14   | 6
+                   Economy  |     3  |    0.753              |      3   | 0
+                   Standard |    14  |    0.827              |     10   | 4
 exceptions       : indivisible_oversize=1
-
-disruption demo  : O0069 cancelled at T+95
-  as-of cutoff   : L001 carried ['O0031', 'O0069', 'O0039']
-  current        : L001 carries ['O0031', 'O0039']
-  original event untouched — superseded by compensating event (append-only)
-
-delay demo       : L005 delayed +300 min — 4 party notification(s) queued (delay measured vs the promise)
-  NOTIFY C04 (Customer 04) — truck L005 delayed:
-    O0045 (customer): 56 units, $3,486.80 — 1 day(s) late (117 min past window)
-    total value at delay: $3,486.80
-  NOTIFY C06 (Customer 06) — truck L005 delayed:
-    O0002 (customer): 50 units, $3,325.92 — 1 day(s) late (270 min past window)
-    total value at delay: $3,325.92
-  second delay +180: 8 notifications in audit trail, 4 live — superseded, never duplicated
 ```
 
-Consolidation cuts the fleet from a naive 85 trucks to 37 — **56% fewer trucks** — with one honest exception: an order physically too big for any truck and indivisible. Nothing is dropped silently — every unplanned order carries a reason code, and every broken promise produces exactly one live notification per affected party.
+Consolidation cuts the booking from a naive 85 consignments to 37 — **56% fewer consignments** — with one honest exception: an order physically too big for any truck and indivisible. Nothing is dropped silently — every unplanned order carries a reason code, and every broken promise produces exactly one live notification per affected party.
 
 ## The methods, by name
 
 | Stage | Problem class | Method | Where |
 |---|---|---|---|
+| **Carrier eligibility** | **Rule evaluation over a versioned rule set** | **capability ∩ business rule; first match wins; decision emitted with `rule_set_version` + `matched_rule`** | `eligibility.py` |
 | Consolidation | Bin packing (2-dim: weight + cube) | **First-Fit Decreasing** — provably ≤ 11/9·OPT + 6/9 bins | `packing.py` |
 | Oversize orders | Split Delivery VRP idea | split across trucks only when `divisible=True`; else exception | `packing.py` |
-| Fleet choice | Heterogeneous fleet | smallest fitting model → best projected fill, cost tie-break | `packing.py` |
+| Service choice | Heterogeneous carrier set | smallest **eligible** service that fits → best projected fill, cost tie-break | `packing.py` |
 | Stop sequencing | **VRPTW** (single-vehicle per load) | OR-Tools `RoutingModel`, `PATH_CHEAPEST_ARC`, deterministic | `routing.py` |
 | Departure flexibility | bitemporal route timing | solved **twice**: earliest departure and just-in-time departure → the pair becomes the decision space | `routing.py` |
-| Driver assignment | Interval scheduling + rostering | **CP-SAT**: optional intervals, `NoOverlap` per driver, simplified FMCSA HOS (11h driving / 14h duty) | `assignment.py` |
+| Departure assignment | Interval scheduling | **CP-SAT**: optional intervals, `NoOverlap` per departure slot, tender accepted only inside the acceptance window and before cutoff | `assignment.py` |
 | Plan of record | Event sourcing | append-only ledger; corrections are **compensating events**; point-in-time folds | `ledger.py` |
-| Delay impact | **Lineage traversal + idempotent fan-out** | truck → stops → orders → parties; scoped notification per party; supersede by (party × truck), never duplicate | `delay.py` |
+| Delay impact | **Lineage traversal + idempotent fan-out** | consignment → stops → orders → parties; scoped notification per party; supersede by (party × truck), never duplicate | `delay.py` |
 | Analytics | — | DuckDB: utilization + binding dimension, naive-baseline savings, OTIF under injected delay, exceptions | `metrics.py` |
 
-## The fleet is configuration, not code
+## The carrier network is configuration, not code
 
-Every truck model, the depot, the corridors, and the HOS parameters live in **`config/fleet.yml`**. Adding a truck model is a pull request that touches one YAML entry and zero Python files — and CI proves it: `tests/test_config.py` instantiates a fleet from a fixture template with an extra model (`CargoBike`) and packs orders onto it with no code change. A truck model is an asset class; onboarding one is a template definition — configuration-over-code, the same principle as the calibration artifact below.
+Every carrier service, what it is **approved to carry**, the corridors, the handling limits, **and the routing rules** live in **`config/network.yml`**. Onboarding a carrier is a pull request that touches one YAML entry and zero Python files; so is changing which goods may ride it. CI proves both: `tests/test_config.py` instantiates a network from a fixture template carrying an extra service (`MiniParcel`) and its own rule set (`alt-v1`), and packs orders onto it with no code change.
+
+Eligibility is the **intersection of two independent facts**: what the carrier is certified to accept (`approved:`, a fact about the carrier) and what we are willing to send there (`routing_rules:`, which may be stricter). A rule that allows a service the carrier is not approved for changes nothing — tested.
 
 ## Stage 3A — travel times as a pluggable provider (the API-integration layer)
 
@@ -97,6 +87,20 @@ Two departure policies, same orders, same fleet:
 
 That is the safety-stock trade-off (buffer sized to variability) appearing in the time dimension, and it fell out of the model rather than being asserted. The dial is `latest_depart` in `routing.py`.
 
+## Terminology
+
+Chinese forwarding says 敏感货 (sensitive goods) and 敏感线 (sensitive line). The English trade does not use "sensitive". Carriers publish **prohibited** (never carried) and **restricted** (carried only under conditions) lists, and a service is **approved**, or not approved, for a commodity class.
+
+| 中文 | this codebase |
+|---|---|
+| 普货 | `general` |
+| 敏感货 | a restricted `commodity_class` |
+| 敏感线 / 专线 | a service whose `approved:` list includes that class |
+| 违禁品 | `prohibited` — rule `R1`, refused before any lane is considered |
+| 带电 / 含酒精 | `lithium_battery` / `flammable_liquid`, both dangerous goods |
+
+`lane` is correct English — one origin-destination pair with a service.
+
 ## Traps that are content, not obstacles
 
 - **Silent infeasibility is forbidden.** Every unplanned order becomes an exception event with a reason code. The conservation test enforces it.
@@ -108,9 +112,9 @@ That is the safety-stock trade-off (buffer sized to variability) appearing in th
 - **Supersede, never duplicate.** A truck delayed twice updates its notification (idempotency key: party × truck); the ledger keeps both — the audit trail shows what each party was told at every point (tested).
 - **Travel times** are haversine × 1.3 road-circuity ÷ 60 km/h — the standard first approximation; swapping in OSRM road times is a one-module change (`geo.py`).
 
-## The 23 property tests
+## The 36 property tests
 
-conservation (orders in = planned + excepted) · split allocations sum back to order mass · capacity never exceeded · every arrival inside its window · HOS and shift legality, no driver overlap · divisible oversize splits / indivisible excepts · same seed ⇒ same plan fingerprint · utilization floor vs. naive baseline · **notification coverage** (every late order in exactly one live notification per affected party) · **no cross-party leakage** · **on-time orders are non-events** · **second delay supersedes, never duplicates, audit trail preserved** · **delay inside the window notifies no one** · circuity parameter recovery (fit = 1.3) · wider buffers for noisier corridors · versioned artifact + honesty note · plans record their calibration version · blast-radius preference soft but real · fleet instantiates from a fixture template (CargoBike) · new model packs with zero code changes · retry-then-success with exponential backoff · circuit opens and the provider degrades to haversine (planning never stops) · cassette replay is deterministic and offline (a miss raises, never goes live)
+conservation (orders in = planned + excepted) · split allocations sum back to order mass · capacity never exceeded · every arrival inside its window · HOS and shift legality, no driver overlap · divisible oversize splits / indivisible excepts · same seed ⇒ same plan fingerprint · utilization floor vs. naive baseline · **notification coverage** (every late order in exactly one live notification per affected party) · **no cross-party leakage** · **on-time orders are non-events** · **second delay supersedes, never duplicates, audit trail preserved** · **delay inside the window notifies no one** · circuity parameter recovery (fit = 1.3) · wider buffers for noisier corridors · versioned artifact + honesty note · plans record their calibration version · blast-radius preference soft but real · network instantiates from a fixture template (MiniParcel) · new service packs with zero code changes · **flammable liquid and lithium cells confine to the DG-approved service** · **a weight band narrows the services for cosmetics** · **prohibited goods have no lane and are refused by rule id** · **an unknown commodity class is refused by name, not by silence** · **carrier capability overrides a permissive rule** · **a refused parcel is an exception naming the rule, never a silent drop** · **the decision event carries the rule-set version** · **a past decision stays explainable after the rules change** · **blast radius is a query over the rule that fired** · retry-then-success with exponential backoff · circuit opens and the provider degrades to haversine (planning never stops) · cassette replay is deterministic and offline (a miss raises, never goes live)
 
 ## Own-it exercises (in order)
 
@@ -124,11 +128,6 @@ conservation (orders in = planned + excepted) · split allocations sum back to o
 8. Point `OSRM_URL` at a self-hosted OSRM instance and re-record the cassette; compare the bias table against the public server's.
 9. Add a `GoogleMatrixProvider` cassette: get a key, record one day, and extend `compare_providers` to a three-way table.
 
-## Publishing
+## Licence
 
-```bash
-git init && git add -A && git commit -m "dispatch planner: FFD + VRPTW + CP-SAT over an event ledger, with delay-impact notifications"
-gh repo create dispatch-planner --public --source=. --push
-```
-
-Commits will be dated when you make them — the project is honestly a 2026 project, and its date should say so.
+MIT — see [LICENSE](LICENSE). The engine is public; the rate cards, real lane rules and customer data that make it a business are not, and live outside this repository by design (`config/` here carries synthetic values only).
